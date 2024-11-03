@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from typing import override
 
@@ -11,6 +12,7 @@ from stores.store import Store, Pairings
 
 class MemoryStore(Store):
     def __init__(self):
+        self.__logger = logging.getLogger(self.__class__.__name__)
         self.__group_games: dict[GroupId, set[Game]] = defaultdict(set)
         self.__user_games: dict[UserId, set[Game]] = defaultdict(set)
         self.__game_users: dict[Game, set[UserId]] = defaultdict(set)
@@ -40,13 +42,8 @@ class MemoryStore(Store):
         assert set(pairings.keys()) == set(pairings.values()) == self.__game_users[game]
         assert all((game in self.__user_games[user_id] for user_id in self.__game_users[game]))
 
-        old_pairings = self.__pairings[game]
-        for user in old_pairings:
-            self.__user_games[user].remove(game)
-
         self.__pairings[game] = pairings
-        for user_id in pairings:
-            self.__user_games[user_id].add(game)
+        logging.info("Saving pairings for game %s (poll_id %s): %s", game, poll_id, pairings)
 
 
     @override
@@ -56,18 +53,21 @@ class MemoryStore(Store):
 
     @override
     async def get_pairings(self, user_id: UserId) -> list[tuple[Game, UserId]]:
+        logging.info("Fetching pairings for %s", user_id)
         games = self.__user_games[user_id]
 
-        return [(game, self.__pairings[game][user_id]) for game in games]
+        return [(game, self.__pairings[game][user_id]) for game in games if user_id in self.__pairings[game]]
 
     @override
     async def add_user_to_game(self, user_id: UserId, poll_id: PollId):
         game = await self.get_game(poll_id)
+        logging.info("Adding user_id %s to %s (poll_id %s)", user_id, game, poll_id)
         self.__game_users[game].add(user_id)
         self.__user_games[user_id].add(game)
 
     @override
     async def remove_user_from_game(self, user_id: UserId, poll_id: PollId):
         game = await self.get_game(poll_id)
+        logging.info("Removing user_id %s from game %s (poll_id %s)", user_id, game, poll_id)
         self.__game_users[game].remove(user_id)
         self.__user_games[user_id].remove(game)

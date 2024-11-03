@@ -110,14 +110,22 @@ class SantaBot:
     @restrict_to_chat_type("Send this to me as a private message instead",
                            {ChatType.PRIVATE})
     async def _handle_status(self, update: Update, _: CallbackContext):
-        user_id = update.message.id
+        user_id = update.message.from_user.id
         pairings = await self.__store.get_pairings(user_id)
         if not pairings:
             message = r"You are currently not in any Secret Santas\!"
         else:
-            message = "\n".join(["These are whom you are the Secret Santa for:\n",
-                                 *(rf"__{game.name}__ \(*{(await self.__get_chat_info(game.group_id)).title}*\)"
-                                   for game, recipient_id in pairings)])
+            messages = ["These are whom you are the Secret Santa for:\n"]
+            for game, recipient_id in pairings:
+                group = await self.__get_chat_info(game.group_id)
+                recipient = await self.__get_chat_info(recipient_id)
+                recipient_name = f"{recipient.first_name or ""} {recipient.last_name or ''}".strip() or "Unnamed"
+                messages.append(" ".join([
+                    rf"__{game.name}__ \(*{group.title}*\): ",
+                    f"[{recipient_name}](tg://user?id={recipient_id})",
+                    rf"\(@{recipient.username}\)" if recipient.username else "",
+                ]))
+            message = "\n".join(messages)
         await update.message.reply_markdown_v2(message)
 
     @restrict_to_chat_type(
