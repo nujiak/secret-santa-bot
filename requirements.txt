@@ -1,0 +1,2 @@
+python-telegram-bot~=21.6
+bidict~=0.23.1
