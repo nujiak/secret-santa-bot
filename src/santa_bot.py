@@ -35,6 +35,10 @@ class SantaBot:
         self.__application = application
         application.add_handlers(self._get_handlers())
 
+    @property
+    def application(self) -> Application:
+        return self.__application
+
     async def __get_chat_info(self, chat_id: Union[UserId, GroupId]) -> ChatFullInfo:
         return await self.__application.bot.get_chat(chat_id)
 
