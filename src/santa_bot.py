@@ -99,8 +99,12 @@ class SantaBot:
 
         group: ChatFullInfo = await self.__get_chat_info(game.group_id)
 
+        # collect usernames while updating users
+        usernames = []
         async def update_user(santa_id, recipient_id):
             recipient: ChatFullInfo = await self.__get_chat_info(recipient_id)
+            if recipient.username:
+                usernames.append(recipient.username)
             await self.__application.bot.send_message(
                 santa_id,
                 (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
@@ -109,6 +113,12 @@ class SantaBot:
             )
 
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
+
+        notify_message = "\n".join(["I have shuffled the Secret Santas and sent your pairings in our private chats! If "
+                                    "you did not receive a message from me, /start a private chat with me now.\n",
+                                    ", ".join((f"@{username}" for username in usernames)),
+                                    ])
+        await update.message.reply_text(notify_message)
 
     async def _handle_poll_answer(self, update: Update, _: CallbackContext):
         if 0 in update.poll_answer.option_ids:
