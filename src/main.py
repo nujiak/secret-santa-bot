@@ -13,7 +13,7 @@ from stores.pickle_store import PickleStore
 
 type StoreChoice = Literal["memory", "pickle"]
 
-POLLING_INTERVAL_SECONDS = 0.1
+POLLING_INTERVAL_SECONDS = 1
 
 def main(store: StoreChoice, save_file: Optional[os.PathLike] = None):
     logging.basicConfig(format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s', level=logging.INFO)
