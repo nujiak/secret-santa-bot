@@ -8,11 +8,15 @@ type Pairings = dict[UserId, UserId]
 
 class Store(ABC):
     @abstractmethod
-    async def create_game(self, game_name: str, group: Group, poll_id: PollId):
+    async def create_game(self, game_name: str, group: Group, poll_id: PollId, leader_id: UserId):
         pass
 
     @abstractmethod
     async def get_game(self, poll_id: PollId) -> Game:
+        pass
+
+    @abstractmethod
+    async def get_leader(self, poll_id: PollId) -> UserId:
         pass
 
     @abstractmethod

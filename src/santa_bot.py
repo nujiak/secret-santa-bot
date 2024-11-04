@@ -9,9 +9,10 @@ from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Applicati
 
 from literals import JOIN_STRING
 from models import UserId, GroupId
+from models.game import Game
 from models.group import Group
 from stores.store import Store
-from utils import shuffle_pair
+from utils import shuffle_pair, fmt_name
 
 
 def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
@@ -68,12 +69,14 @@ class SantaBot:
             await update.message.reply_text(f"The game {new_game_name} already exists in this group")
             return
 
-        message = await update.message.chat.send_poll(
+        poll_message = await update.message.chat.send_poll(
             question=new_game_name,
             options=[JOIN_STRING, "No thanks"],
             is_anonymous=False,
         )
-        await self.__store.create_game(new_game_name, group, message.poll.id)
+        poll_id = poll_message.poll.id
+        sender_id = update.message.from_user.id
+        await self.__store.create_game(new_game_name, group, poll_id, sender_id)
 
     @require_me
     @restrict_to_chat_type("Use this command in a group to shuffle a Secret Santa game",
@@ -85,6 +88,10 @@ class SantaBot:
             await update.message.reply_text("Reply /shuffle to a Secret Santa poll to shuffle the participants")
             return
         poll_id = update.message.reply_to_message.poll.id
+        leader_id = await self.__store.get_leader(poll_id)
+        if leader_id != update.message.from_user.id:
+            leader = await self.__get_chat_info(leader_id)
+            await update.message.reply_markdown_v2(f"Only the leader for this poll {fmt_name(leader)} can start shuffling")
         game = await self.__store.get_game(poll_id)
         users = await self.__store.get_users(poll_id)
         pairings = shuffle_pair(users)
@@ -94,12 +101,10 @@ class SantaBot:
 
         async def update_user(santa_id, recipient_id):
             recipient: ChatFullInfo = await self.__get_chat_info(recipient_id)
-            recipient_name = f"{recipient.first_name or ""} {recipient.last_name or ''}".strip() or "Unnamed"
             await self.__application.bot.send_message(
                 santa_id,
-                " ".join([f"You have been assigned as [{recipient_name}](tg://user?id={recipient_id})'s",
-                          rf"\(@{recipient.username}\)" if recipient.username else "",
-                          rf"Secret Santa for '__{game.name}__' in *{group.title}*\!"]),
+                (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
+                 rf"for '__{game.name}__' in *{group.title}*\!"),
                 parse_mode=ParseMode.MARKDOWN_V2
             )
 
@@ -120,15 +125,13 @@ class SantaBot:
             message = r"You are currently not in any Secret Santas\!"
         else:
             messages = ["These are whom you are the Secret Santa for:\n"]
-            for game, recipient_id in pairings:
-                group = await self.__get_chat_info(game.group_id)
-                recipient = await self.__get_chat_info(recipient_id)
-                recipient_name = f"{recipient.first_name or ""} {recipient.last_name or ''}".strip() or "Unnamed"
-                messages.append(" ".join([
-                    rf"__{game.name}__ \(*{group.title}*\): ",
-                    f"[{recipient_name}](tg://user?id={recipient_id})",
-                    rf"\(@{recipient.username}\)" if recipient.username else "",
-                ]))
+
+            async def build_message(game: Game, recipient_id: UserId):
+                group, recipient = await asyncio.gather(self.__get_chat_info(game.group_id),
+                                                        self.__get_chat_info(recipient_id))
+                return rf"__{game.name}__ \(*{group.title}*\): {fmt_name(recipient)}"
+
+            messages.extend(await asyncio.gather(*(build_message(game, recipient_id) for game, recipient_id in pairings)))
             message = "\n".join(messages)
         await update.message.reply_markdown_v2(message)
 

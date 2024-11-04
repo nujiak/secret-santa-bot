@@ -37,7 +37,8 @@ def _run_with_pickle_store(application: Application, save_file: os.PathLike):
 
     try:
         application.run_polling(POLLING_INTERVAL_SECONDS)
-    except:
+    except Exception as e:
+        logging.getLogger("_run_with_pickle_store").error(e)
         pass
     finally:
         asyncio.run(pickle_store.pickle())

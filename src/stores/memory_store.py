@@ -18,17 +18,24 @@ class MemoryStore(Store):
         self.__game_users: dict[Game, set[UserId]] = defaultdict(set)
         self.__pairings: dict[Game, dict[UserId, UserId]] = defaultdict(dict)
         self.__polls: bidict[Game, PollId] = bidict()
+        self.__leaders: dict[Game, UserId] = dict()
 
     @override
     async def get_game(self, poll_id: PollId) -> Game:
         return self.__polls.inverse[poll_id]
 
     @override
-    async def create_game(self, game_name: str, group: Group, poll_id: PollId):
+    async def get_leader(self, poll_id: PollId) -> UserId:
+        game = await self.get_game(poll_id)
+        return self.__leaders[game]
+
+    @override
+    async def create_game(self, game_name: str, group: Group, poll_id: PollId, leader_id: UserId):
         assert not await self.game_exists(game_name, group)
         new_game = Game(name=game_name, group_id=group.id)
         self.__group_games[group.id].add(new_game)
         self.__polls[new_game] = poll_id
+        self.__leaders[new_game] = leader_id
 
     @override
     async def game_exists(self, game_name: str, group: Group) -> bool:
@@ -44,7 +51,6 @@ class MemoryStore(Store):
 
         self.__pairings[game] = pairings
         logging.info("Saving pairings for game %s (poll_id %s): %s", game, poll_id, pairings)
-
 
     @override
     async def get_users(self, poll_id: PollId) -> list[UserId]:
