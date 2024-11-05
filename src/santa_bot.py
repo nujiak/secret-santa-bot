@@ -5,7 +5,8 @@ from typing import Any, Union
 
 from telegram import Update, ChatFullInfo
 from telegram.constants import ChatType, ParseMode
-from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler
+from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler, MessageHandler, \
+    filters
 
 from literals import JOIN_STRING
 from models import UserId, GroupId
@@ -167,8 +168,17 @@ class SantaBot:
             "Welcome to the Secret Santa Bot! I can help you to organise a Secret Santa in a group, just add me to the group and send /new")
         await self._handle_status(update, callback_context)
 
+    async def _handle_new_members(self, update: Update, _: CallbackContext):
+        new_members = update.message.new_chat_members
+        if await self.application.bot.get_me() in new_members:
+            await update.message.chat.send_message("Hi\! I am here to help organise Secret Santas in this group\. "
+                                                   "To get started, send:\n\n" 
+                                                   "/new _name of Secret Santa Game_",
+                                                   parse_mode=ParseMode.MARKDOWN_V2)
+
     def _get_handlers(self) -> list[BaseHandler]:
         return [
+            MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self._handle_new_members),
             CommandHandler("new", self._handle_new),
             CommandHandler("shuffle", self._handle_shuffle),
             CommandHandler(["status"], self._handle_status),
