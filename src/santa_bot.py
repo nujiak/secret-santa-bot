@@ -74,8 +74,15 @@ class SantaBot:
             options=[JOIN_STRING, "No thanks"],
             is_anonymous=False,
         )
-        poll_id = poll_message.poll.id
         sender_id = update.message.from_user.id
+        leader = await self.__get_chat_info(sender_id)
+
+        await poll_message.reply_markdown_v2(f"Recruitment for __{new_game_name}__ has started\! Vote on the poll "
+                                             f"above to join as a Secret Santa.\n\n"
+                                             f"When ready, the leader {fmt_name(leader)} can reply /shuffle to the "
+                                             f"poll to start allocating Santas.")
+
+        poll_id = poll_message.poll.id
         await self.__store.create_game(new_game_name, group, poll_id, sender_id)
 
     @require_me
@@ -89,8 +96,8 @@ class SantaBot:
             return
         poll_id = update.message.reply_to_message.poll.id
         leader_id = await self.__store.get_leader(poll_id)
+        leader = await self.__get_chat_info(leader_id)
         if leader_id != update.message.from_user.id:
-            leader = await self.__get_chat_info(leader_id)
             await update.message.reply_markdown_v2(f"Only the leader for this poll {fmt_name(leader)} can start shuffling")
             return
         game = await self.__store.get_game(poll_id)
@@ -122,7 +129,9 @@ class SantaBot:
         notify_message = "\n".join(["I have shuffled the Secret Santas and sent your pairings in our private chats! If "
                                     "you did not receive a message from me, /start a private chat with me now.\n",
                                     ", ".join((f"@{username}" for username in usernames)),
-                                    ])
+                                    f"\nIf you would like to reshuffle, the leader {fmt_name(leader)} can reply "
+                                    f"/shuffle to the poll again. Send /status to me privately to see your latest "
+                                    "allocations."])
         await update.message.reply_text(notify_message)
 
     async def _handle_poll_answer(self, update: Update, _: CallbackContext):
