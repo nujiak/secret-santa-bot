@@ -92,6 +92,7 @@ class SantaBot:
         if leader_id != update.message.from_user.id:
             leader = await self.__get_chat_info(leader_id)
             await update.message.reply_markdown_v2(f"Only the leader for this poll {fmt_name(leader)} can start shuffling")
+            return
         game = await self.__store.get_game(poll_id)
         users = await self.__store.get_users(poll_id)
         pairings = shuffle_pair(users)
