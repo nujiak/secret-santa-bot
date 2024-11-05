@@ -78,9 +78,9 @@ class SantaBot:
         leader = await self.__get_chat_info(sender_id)
 
         await poll_message.reply_markdown_v2(f"Recruitment for __{new_game_name}__ has started\! Vote on the poll "
-                                             f"above to join as a Secret Santa.\n\n"
+                                             f"above to join as a Secret Santa\\.\n\n"
                                              f"When ready, the leader {fmt_name(leader)} can reply /shuffle to the "
-                                             f"poll to start allocating Santas.")
+                                             f"poll to start allocating Santas\\.")
 
         poll_id = poll_message.poll.id
         await self.__store.create_game(new_game_name, group, poll_id, sender_id)
