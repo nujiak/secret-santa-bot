@@ -95,6 +95,10 @@ class SantaBot:
             return
         game = await self.__store.get_game(poll_id)
         users = await self.__store.get_users(poll_id)
+
+        if len(users) < 4:
+            await update.message.reply_text("You need at least 4 players to start a Secret Santa")
+            return
         pairings = shuffle_pair(users)
         await self.__store.save_pairings(poll_id, pairings)
 
