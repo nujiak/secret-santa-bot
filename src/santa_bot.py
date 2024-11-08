@@ -2,9 +2,9 @@ import asyncio
 import datetime
 from collections.abc import Callable, Awaitable
 from functools import wraps
-from typing import Any, Union
+from typing import Any, Union, Optional
 
-from telegram import Update, ChatFullInfo
+from telegram import Update, ChatFullInfo, User
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler, MessageHandler, \
     filters
@@ -34,7 +34,7 @@ def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
 class SantaBot:
     def __init__(self, store: Store, application: Application):
         self.__store = store
-        self.__id = None
+        self.__me: Optional[User] = None
         self.__application = application
         application.add_handlers(self._get_handlers())
 
@@ -49,9 +49,8 @@ class SantaBot:
     def require_me(callback: Callable[[Any, Update, CallbackContext], Awaitable[None]]):
         @wraps(callback)
         async def wrapper(self: 'SantaBot', update: Update, context: CallbackContext):
-            if self.__id is None:
-                me = await self.__application.bot.get_me()
-                self.__id = me.id
+            if self.__me is None:
+                self.__me = await self.__application.bot.get_me()
             await callback(self, update, context)
 
         return wrapper
@@ -93,9 +92,10 @@ class SantaBot:
     @restrict_to_chat_type("Use this command in a group to shuffle a Secret Santa game",
                            {ChatType.GROUP, ChatType.SUPERGROUP})
     async def _handle_shuffle(self, update: Update, _: CallbackContext):
+        assert self.__me is not None
         if (not update.message.reply_to_message
                 or not update.message.reply_to_message.poll
-                or update.message.reply_to_message.from_user.id != self.__id):
+                or update.message.reply_to_message.from_user != self.__me):
             await update.message.reply_text("Reply /shuffle to a Secret Santa poll to shuffle the participants")
             return
         poll_id = update.message.reply_to_message.poll.id
@@ -171,9 +171,11 @@ class SantaBot:
             "Welcome to the Secret Santa Bot! I can help you to organise a Secret Santa in a group, just add me to the group and send /new")
         await self._handle_status(update, callback_context)
 
+    @require_me
     async def _handle_new_members(self, update: Update, _: CallbackContext):
+        assert self.__me is not None
         new_members = update.message.new_chat_members
-        if await self.application.bot.get_me() in new_members:
+        if self.__me in new_members:
             await update.message.chat.send_message("Hi\! I am here to help organise Secret Santas in this group\. "
                                                    "To get started, send:\n\n" 
                                                    "/new _name of Secret Santa Game_",
