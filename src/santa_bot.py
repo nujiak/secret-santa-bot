@@ -13,7 +13,7 @@ from models import UserId, GroupId
 from models.game import Game
 from models.group import Group
 from stores.store import Store
-from utils import shuffle_pair, fmt_name
+from utils import shuffle_pair, fmt_name, escape
 
 
 def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
@@ -78,7 +78,7 @@ class SantaBot:
         sender_id = update.message.from_user.id
         leader = await self.__get_chat_info(sender_id)
 
-        await poll_message.reply_markdown_v2(f"Recruitment for __{new_game_name}__ has started\! Vote on the poll "
+        await poll_message.reply_markdown_v2(f"Recruitment for __{escape(new_game_name)}__ has started\! Vote on the poll "
                                              f"above to join as a Secret Santa\\.\n\n"
                                              f"When ready, the leader {fmt_name(leader)} can reply /shuffle to the "
                                              f"poll to start allocating Santas\\.")
@@ -121,7 +121,7 @@ class SantaBot:
             await self.__application.bot.send_message(
                 santa_id,
                 (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
-                 rf"for '__{game.name}__' in *{group.title}*\!"),
+                 rf"for '__{escape(game.name)}__' in *{group.title}*\!"),
                 parse_mode=ParseMode.MARKDOWN_V2
             )
 
@@ -154,7 +154,7 @@ class SantaBot:
             async def build_message(game: Game, recipient_id: UserId):
                 group, recipient = await asyncio.gather(self.__get_chat_info(game.group_id),
                                                         self.__get_chat_info(recipient_id))
-                return rf"__{game.name}__ \(*{group.title}*\): {fmt_name(recipient)}"
+                return rf"__{escape(game.name)}__ \(*{escape(group.title)}*\): {fmt_name(recipient)}"
 
             messages.extend(await asyncio.gather(*(build_message(game, recipient_id) for game, recipient_id in pairings)))
             message = "\n".join(messages)

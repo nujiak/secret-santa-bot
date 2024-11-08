@@ -15,8 +15,9 @@ type StoreChoice = Literal["memory", "pickle"]
 
 POLLING_INTERVAL_SECONDS = 1
 
-def main(store: StoreChoice, save_file: Optional[os.PathLike] = None):
-    logging.basicConfig(format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s', level=logging.INFO)
+def main(store: StoreChoice, save_file: Optional[os.PathLike] = None, run_in_debug: bool = False):
+    logging.basicConfig(format='%(asctime)s [%(levelname)s] (%(name)s) - %(message)s',
+                        level=logging.DEBUG if run_in_debug else logging.INFO)
     application = Application.builder().token(os.getenv("SANTA_BOT_TOKEN")).build()
     if store == "memory":
         _run_with_memory_store(application)
@@ -48,6 +49,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--store", type=str, choices=["memory", "pickle"], default="memory")
     parser.add_argument("-f", "--save-file", type=str, help="path to pickle file")
+    parser.add_argument("--debug", action="store_true", help="run with debug logging")
     args = parser.parse_args()
 
-    main(args.store, args.save_file)
+    main(args.store, args.save_file, run_in_debug=args.debug)
