@@ -21,15 +21,11 @@ def shuffle_pair[T](items: list[T]) -> dict[T, T]:
 
 def fmt_name(chat_info: ChatFullInfo) -> str:
     assert chat_info.type == ChatType.PRIVATE
-    strs = []
+    if chat_info.username:
+        return f"@{chat_info.username}"
+
     full_name = f"{chat_info.first_name or ""} {chat_info.last_name or ""}".strip() or "Unnamed"
-    strs.append(f"[{escape(full_name)}](tg://user?id={chat_info.id})")
-
-    username = chat_info.username
-    if username:
-        strs.append(rf"\(@{username}\)")
-
-    return " ".join(strs)
+    return f"[{escape(full_name)}](tg://user?id={chat_info.id})"
 
 
 def escape(text: str) -> str:
