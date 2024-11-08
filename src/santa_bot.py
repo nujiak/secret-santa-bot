@@ -116,11 +116,11 @@ class SantaBot:
         group: ChatFullInfo = await self.__get_chat_info(game.group_id)
 
         # collect usernames while updating users
-        usernames = []
+        players = []
         async def update_user(santa_id, recipient_id):
             recipient: ChatFullInfo = await self.__get_chat_info(recipient_id)
             if recipient.username:
-                usernames.append(recipient.username)
+                players.append(recipient)
             await self.__application.bot.send_message(
                 santa_id,
                 (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
@@ -130,13 +130,17 @@ class SantaBot:
 
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
 
-        notify_message = "\n".join(["I have shuffled the Secret Santas and sent your pairings in our private chats! If "
-                                    "you did not receive a message from me, /start a private chat with me now.\n",
-                                    ", ".join((f"@{username}" for username in usernames)),
-                                    f"\nIf you would like to reshuffle, the leader {fmt_name(leader)} can reply "
-                                    f"/shuffle to the poll again. Send /status to me privately to see your latest "
-                                    "allocations."])
-        await update.message.reply_text(notify_message)
+        player_list = sorted((fmt_name(player) for player in players))
+        me_url = f"https://t.me/{self.__me.username}"
+
+        notify_message = ("I have shuffled the Secret Santas and sent your pairings "
+                          rf"[in our private chats]({me_url})\!{"\n\n"}"
+                          "Participants:\n"
+                          f"{"\n".join((f"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}\n\n"
+                          f"If you would like to reshuffle, the leader {fmt_name(leader)} can reply "
+                          rf"/shuffle to the poll again\. Send /status to [me privately]({me_url}) to see your latest "
+                          r"allocations\.")
+        await update.message.reply_markdown_v2(notify_message)
 
     async def _handle_poll_answer(self, update: Update, _: CallbackContext):
         if 0 in update.poll_answer.option_ids:
