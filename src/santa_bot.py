@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from collections.abc import Callable, Awaitable
 from functools import wraps
 from typing import Any, Union
@@ -60,7 +61,9 @@ class SantaBot:
     async def _handle_new(self, update: Update, _: CallbackContext):
         splits = update.message.text.split(" ", 1)
         if len(splits) == 1:
-            await update.message.reply_text("Please provide a name to identify the new Secret Santa game")
+            await update.message.reply_markdown_v2("Please provide a name to identify the new Secret Santa game\. "
+                                                   "For example:\n\n"
+                                                   f"/new _Christmas '{str(datetime.date.today().year)[2:]}_")
             return
 
         new_game_name = splits[1]
