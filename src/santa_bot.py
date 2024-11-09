@@ -173,6 +173,7 @@ class SantaBot:
                                                         self.__get_chat_info(recipient_id))
                 return rf"__{escape(game.name)}__ \(*{escape(group.title)}*\): {fmt_name(recipient)}"
 
+            [self.__logger.info(pairing) for pairing in pairings]
             messages.extend(await asyncio.gather(*(build_message(game, recipient_id) for game, recipient_id in pairings)))
             message = "\n".join(messages)
         await update.message.reply_markdown_v2(message)

@@ -1,6 +1,5 @@
 import logging
 import os
-import pathlib
 import sqlite3
 from typing import Callable, Optional, Union
 from venv import logger
@@ -124,9 +123,10 @@ class SqliteStore(Store):
                                                     FROM pairing GROUP BY poll_id
                                                   )
                                                   SELECT name, group_id, recipient_id
-                                                  FROM (game, pairing), last_shuffle USING (poll_id, reshuffle)
-                                                  WHERE santa_id = :santa_id""",
-                               {"santa_id": user_id}).fetchall()
+                                                  FROM pairing INNER JOIN last_shuffle USING (poll_id, reshuffle)
+                                                    INNER JOIN game USING (poll_id)
+                                                  WHERE santa_id = :user_id""",
+                               {"user_id": user_id}).fetchall()
         if data is None:
             return []
         return [(Game(name, group_id), recipient_id) for name, group_id, recipient_id in data]
@@ -138,8 +138,8 @@ class SqliteStore(Store):
                                                     FROM pairing GROUP BY poll_id
                                                   )
                                                   SELECT santa_id, recipient_id
-                                                  FROM (game, pairing), last_shuffle USING (poll_id, reshuffle)
-                                                  WHERE game.poll_id = :poll_id""",
+                                                  FROM pairing INNER JOIN last_shuffle USING (poll_id, reshuffle)
+                                                  WHERE poll_id = :poll_id""",
                                            {"poll_id": poll_id}).fetchall()
         self.__logger.debug("Fetched pairings for %s: %s", poll_id, data)
         if not data:
