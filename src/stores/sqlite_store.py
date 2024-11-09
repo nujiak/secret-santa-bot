@@ -1,9 +1,9 @@
 import logging
 import os
 import sqlite3
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, override
 
-from models import UserId, PollId
+from models import UserId, PollId, MessageId
 from models.game import Game
 from models.group import Group
 from stores.store import Store, Pairings
@@ -18,7 +18,10 @@ class SchemaManager:
 
         logger.info(f"Current sqlite schema version: {current_version}")
 
-        upgrade_functions: list[Callable[[sqlite3.Connection], None]] = [SchemaManager.__upgrade_schema_1]
+        upgrade_functions: list[Callable[[sqlite3.Connection], None]] = [
+            SchemaManager.__upgrade_schema_1,
+            SchemaManager.__upgrade_schema_2,
+        ]
 
         for upgrade_fn in upgrade_functions[current_version:]:
             upgrade_fn(connection)
@@ -52,6 +55,21 @@ class SchemaManager:
                                     UNIQUE (poll_id, reshuffle, recipient_id)
                                     )""")
             connection.execute("""PRAGMA user_version = 1""")
+
+    @staticmethod
+    def __upgrade_schema_2(connection: sqlite3.Connection):
+        with connection:
+            connection.execute("""CREATE TABLE wishlist(
+                                    poll_id TEXT PRIMARY KEY REFERENCES game(poll_id),
+                                    message_id INTEGER UNIQUE
+                                  )""")
+            connection.execute("""CREATE TABLE wishlist_item(
+                                    wishlist_id TEXT REFERENCES wishlist(poll_id),
+                                    user_id INTEGER NOT NULL,
+                                    description TEXT NOT NULL,
+                                    PRIMARY KEY (wishlist_id, user_id)
+                                  )""")
+            connection.execute("""PRAGMA user_version = 2""")
 
 
 class SqliteStore(Store):
@@ -156,3 +174,46 @@ class SqliteStore(Store):
             self.__connection.execute("""DELETE FROM participant
                                          WHERE game_id = :poll_id AND user_id = :user_id""",
                                       {"poll_id": poll_id, "user_id": user_id})
+
+    @override
+    async def create_wishlist(self, poll_id: PollId, message_id: MessageId):
+        with self.__connection:
+            self.__connection.execute("""INSERT INTO wishlist(poll_id, message_id) VALUES (:poll_id, :message_id)
+                                         ON CONFLICT (poll_id) DO UPDATE SET message_id = excluded.message_id""",
+                                      {"poll_id": poll_id, "message_id": message_id})
+
+    @override
+    async def update_wishlist(self, poll_id: PollId, user_id: UserId, description: str):
+        with self.__connection:
+            self.__connection.execute("""INSERT INTO wishlist_item(wishlist_id, user_id, description)
+                                         VALUES (:poll_id, :user_id, :description)
+                                         ON CONFLICT (wishlist_id, user_id) DO 
+                                           UPDATE SET description = excluded.description""",
+                                      {"poll_id": poll_id, "user_id": user_id, "description": description})
+
+    @override
+    async def get_wishlist_id(self, message_id: MessageId) -> Optional[PollId]:
+        with self.__connection:
+            data = self.__connection.execute("SELECT poll_id FROM wishlist WHERE message_id = :message_id",
+                                             {"message_id": message_id}).fetchone()
+        if data is None:
+            return None
+        return data[0]
+
+    @override
+    async def get_wishlist(self, poll_id: PollId) -> dict[UserId, str]:
+        with self.__connection:
+            data = self.__connection.execute("""SELECT user_id, description FROM wishlist_item
+                                                WHERE wishlist_id = :poll_id""",
+                                             {"poll_id": poll_id}).fetchall()
+        return {user_id: description for user_id, description in data}
+
+    @override
+    async def get_wishlist_message_id(self, poll_id: PollId) -> Optional[MessageId]:
+        with self.__connection:
+            with self.__connection:
+                data = self.__connection.execute("SELECT message_id FROM wishlist WHERE poll_id = :poll_id",
+                                                 {"poll_id": poll_id}).fetchone()
+        if data is None:
+            return None
+        return data[0]

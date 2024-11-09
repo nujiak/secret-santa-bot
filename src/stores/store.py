@@ -1,13 +1,39 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from models import UserId, PollId
+from models import UserId, PollId, MessageId
 from models.game import Game
 from models.group import Group
 
 type Pairings = dict[UserId, UserId]
 
-class Store(ABC):
+
+class WishlistMixin(ABC):
+    @abstractmethod
+    async def create_wishlist(self, poll_id: PollId, message_id: MessageId):
+        """Create or update a wishlist and its latest message id"""
+        pass
+
+    async def get_wishlist_id(self, message_id: MessageId) -> Optional[PollId]:
+        """Returns the poll_id of a wishlist with message_id. Returns None if no such wishlist exists."""
+        pass
+
+    async def get_wishlist_message_id(self, poll_id: PollId) -> Optional[MessageId]:
+        """Returns the message_id of a wishlist with poll_id. Returns None if no such wishlist exists."""
+        pass
+
+    @abstractmethod
+    async def update_wishlist(self, poll_id: PollId, user_id: UserId, description: str):
+        """Upsert an item in the wishlist"""
+        pass
+
+    @abstractmethod
+    async def get_wishlist(self, poll_id: PollId) -> dict[UserId, str]:
+        """Get all wishlist items for a game"""
+        pass
+
+
+class Store(WishlistMixin, ABC):
     @abstractmethod
     async def create_game(self, game_name: str, group: Group, poll_id: PollId, leader_id: UserId):
         pass

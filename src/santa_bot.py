@@ -5,13 +5,13 @@ from collections.abc import Callable, Awaitable
 from functools import wraps
 from typing import Any, Union, Optional
 
-from telegram import Update, ChatFullInfo, User, error
+from telegram import Update, ChatFullInfo, User, error, Message
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler, MessageHandler, \
     filters
 
 from literals import JOIN_STRING
-from models import UserId, GroupId
+from models import UserId, GroupId, PollId
 from models.game import Game
 from models.group import Group
 from stores.store import Store
@@ -216,6 +216,96 @@ class SantaBot:
         logging.debug(message)
         await update.message.reply_to_message.reply_markdown_v2(message)
 
+    @require_me
+    async def _handle_wishlist_reply(self, update: Update, _: CallbackContext):
+        """Handles user reply to a wishlist message"""
+        if not update.message.reply_to_message or update.message.reply_to_message.from_user != self.__me:
+            return
+
+        wishlist_id = await self.__store.get_wishlist_id(update.message.reply_to_message.id)
+        if not wishlist_id:
+            return
+
+        game = await self.__store.get_game(wishlist_id)
+        sender_id = update.message.from_user.id
+
+        if not await self.__player_can_access_wishlist(wishlist_id, sender_id, update.message):
+            return
+
+        wishlist_description = update.message.text
+        await self.__store.update_wishlist(wishlist_id, sender_id, wishlist_description)
+
+        wishlist = await self.__store.get_wishlist(wishlist_id)
+        wishlist_message = await self.__construct_wishlist(game, wishlist)
+        await update.message.reply_to_message.edit_text(wishlist_message, parse_mode=ParseMode.MARKDOWN_V2)
+
+    @require_me
+    @restrict_to_chat_type(
+        "Use /wishlist in a group to start or add on to a wishlist",
+        {ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL}
+    )
+    async def _handle_wishlist_command(self, update: Update, _: CallbackContext):
+        """Handles when a user sends a /wishlist command"""
+
+        async def resend_wishlist(wishlist_id: PollId):
+            sender_id = update.message.from_user.id
+            if not await self.__player_can_access_wishlist(wishlist_id, sender_id, update.message):
+                return
+            splits = update.message.text.split(" ", maxsplit=1)
+            if len(splits) > 1:
+                new_wishlist_item = splits[1]
+                await self.__store.update_wishlist(wishlist_id, sender_id, new_wishlist_item)
+            game, wishlist = await asyncio.gather(self.__store.get_game(wishlist_id),
+                                                  self.__store.get_wishlist(wishlist_id))
+            new_message = await update.message.chat.send_message(await self.__construct_wishlist(game, wishlist),
+                                                                 parse_mode=ParseMode.MARKDOWN_V2)
+
+            old_message_id = await self.__store.get_wishlist_message_id(wishlist_id)
+            await self.__store.create_wishlist(wishlist_id, new_message.id)
+            try:
+                await self.__application.bot.delete_message(chat_id=game.group_id, message_id=old_message_id)
+            except:
+                pass
+
+        negative_response = "Reply /wishlist to a wishlist or a Secret Santa poll to add/update a wishlist"
+
+        if not update.message.reply_to_message:
+            return await update.message.reply_text(negative_response)
+
+        if update.message.reply_to_message.poll and update.message.reply_to_message.from_user == self.__me:
+            poll_id = update.message.reply_to_message.poll.id
+            return await resend_wishlist(poll_id)
+
+        wishlist_id = await self.__store.get_wishlist_id(update.message.reply_to_message.message_id)
+        if not wishlist_id:
+            return await update.message.reply_text(negative_response)
+        return await resend_wishlist(wishlist_id)
+
+    async def __player_can_access_wishlist(self, wishlist_id: PollId, sender_id: UserId, message_to_reply: Message) -> bool:
+        game, pairings = await asyncio.gather(*(self.__store.get_game(wishlist_id),
+                                                self.__store.get_game_pairings(wishlist_id)))
+        # check if sender is in pairings if started, or players if not
+        if ((pairings and sender_id not in pairings.keys()) or
+                (not pairings and sender_id not in await self.__store.get_users(wishlist_id))):
+            await message_to_reply.reply_markdown_v2(f"You must join __{escape(game.name)}__ to add to the wishlist")
+            return False
+        return True
+
+    async def __construct_wishlist(self, game: Game, wishlist: dict[UserId, str]):
+        players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in wishlist.keys()))
+        players = sorted({fmt_name(player): player.id for player in players}.items())
+
+        if players:
+            wishlist_item_segment = f"{"\n".join(f"{name}: _{escape(wishlist[player_id])}_" for name, player_id in players)}"
+        else:
+            wishlist_item_segment = r"There is nothing yet\!"
+
+        return (
+            f"*Wishlist for __{escape(game.name)}__*\n\n"
+            f"{wishlist_item_segment}\n\n"
+            rf"Reply to this message to update your wishlist\!"
+
+        )
 
     @restrict_to_chat_type(
         "Use /new to start a new Secret Santa here.\n\nSend /start to me as a private message for more information.",
@@ -242,5 +332,7 @@ class SantaBot:
             CommandHandler("shuffle", self._handle_shuffle),
             CommandHandler(["status"], self._handle_status),
             CommandHandler(["start"], self._handle_start),
+            CommandHandler("wishlist", self._handle_wishlist_command),
+            MessageHandler(filters.TEXT & filters.REPLY, self._handle_wishlist_reply),
             PollAnswerHandler(self._handle_poll_answer),
         ]
