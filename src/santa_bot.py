@@ -259,6 +259,10 @@ class SantaBot:
                                                   self.__store.get_wishlist(wishlist_id))
             new_message = await update.message.chat.send_message(await self.__construct_wishlist(game, wishlist),
                                                                  parse_mode=ParseMode.MARKDOWN_V2)
+            try:
+                await new_message.pin(disable_notification=True)
+            except error.BadRequest:
+                self.__logger.warning("Unable to pin wishlist")
 
             old_message_id = await self.__store.get_wishlist_message_id(wishlist_id)
             await self.__store.create_wishlist(wishlist_id, new_message.id)
