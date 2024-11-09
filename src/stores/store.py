@@ -13,7 +13,7 @@ class Store(ABC):
         pass
 
     @abstractmethod
-    async def get_game(self, poll_id: PollId) -> Game:
+    async def get_game(self, poll_id: PollId) -> Optional[Game]:
         pass
 
     @abstractmethod

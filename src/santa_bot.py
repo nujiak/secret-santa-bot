@@ -33,11 +33,12 @@ def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
 
 
 class SantaBot:
-    def __init__(self, store: Store, application: Application):
+    def __init__(self, store: Store, application: Application, disable_restrictions: bool):
         self.__store = store
         self.__me: Optional[User] = None
         self.__application = application
         self.__logger = logging.getLogger(self.__class__.__name__)
+        self.__disable_restrictions = disable_restrictions
         application.add_handlers(self._get_handlers())
 
     @property
@@ -109,7 +110,7 @@ class SantaBot:
         game = await self.__store.get_game(poll_id)
         users = await self.__store.get_users(poll_id)
 
-        if len(users) < 4:
+        if not self.__disable_restrictions and len(users) < 4:
             await update.message.reply_text("You need at least 4 players to start a Secret Santa")
             return
         pairings = shuffle_pair(users)

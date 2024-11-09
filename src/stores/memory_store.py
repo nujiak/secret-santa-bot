@@ -21,7 +21,7 @@ class MemoryStore(Store):
         self.__leaders: dict[Game, UserId] = dict()
 
     @override
-    async def get_game(self, poll_id: PollId) -> Game:
+    async def get_game(self, poll_id: PollId) -> Optional[Game]:
         return self.__polls.inverse[poll_id]
 
     @override
