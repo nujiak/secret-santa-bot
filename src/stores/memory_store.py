@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import override
+from typing import override, Optional
 
 from bidict import bidict
 
@@ -63,6 +63,11 @@ class MemoryStore(Store):
         games = self.__user_games[user_id]
 
         return [(game, self.__pairings[game][user_id]) for game in games if user_id in self.__pairings[game]]
+
+    @override
+    async def get_game_pairings(self, poll_id: PollId) -> Optional[Pairings]:
+        game = await self.get_game(poll_id)
+        return self.__pairings.get(game)
 
     @override
     async def add_user_to_game(self, user_id: UserId, poll_id: PollId):

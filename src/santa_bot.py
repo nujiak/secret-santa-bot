@@ -153,9 +153,13 @@ class SantaBot:
         else:
             await self.__store.remove_user_from_game(update.poll_answer.user.id, update.poll_answer.poll_id)
 
-    @restrict_to_chat_type("Send this to me as a private message instead",
-                           {ChatType.PRIVATE})
-    async def _handle_status(self, update: Update, _: CallbackContext):
+    async def _handle_status(self, update: Update, callback_context: CallbackContext):
+        if update.message.chat.type == ChatType.PRIVATE:
+            return await self.__handle_status_in_private(update, callback_context)
+        else:
+            return await self.__handle_status_in_group(update, callback_context)
+
+    async def __handle_status_in_private(self, update: Update, _: CallbackContext):
         user_id = update.message.from_user.id
         pairings = await self.__store.get_pairings(user_id)
         if not pairings:
@@ -171,6 +175,44 @@ class SantaBot:
             messages.extend(await asyncio.gather(*(build_message(game, recipient_id) for game, recipient_id in pairings)))
             message = "\n".join(messages)
         await update.message.reply_markdown_v2(message)
+
+    @require_me
+    async def __handle_status_in_group(self, update: Update, _: CallbackContext):
+        if (not update.message.reply_to_message
+                or not update.message.reply_to_message.poll
+                or update.message.reply_to_message.from_user != self.__me):
+            await update.message.reply_markdown_v2("Reply /status to a Secret Santa poll to see the game's status, "
+                                                   "or send /status to me in a "
+                                                   f"[private chat](https://t.me/{self.__me.username}) to see all your "
+                                                   r"active Secret Santa participation\.")
+            return
+        poll = update.message.reply_to_message.poll
+        poll_id = poll.id
+        game, pairings, leader_id = await asyncio.gather(self.__store.get_game(poll_id),
+                                                         self.__store.get_game_pairings(poll_id),
+                                                         self.__store.get_leader(poll_id))
+        leader = await self.__get_chat_info(leader_id)
+
+        if pairings is not None:
+            players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in pairings.keys()))
+            player_list = sorted((fmt_name(player) for player in players))
+            message = (rf"__{escape(game.name)}__ \(leader {fmt_name(leader)}\){"\n\n"}"
+                       rf"This game has been started and Secret Santas have been shuffled\. Send /status to me in "
+                       rf"a [private chat](https://t.me/{self.__me.username}) to see your allocations\.{"\n\n"}"
+                       rf"Participants:{"\n"}"
+                       f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}\n\n")
+        else:
+            player_ids = await self.__store.get_users(poll_id)
+            players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in player_ids))
+            player_list = sorted((fmt_name(player) for player in players))
+            message = (rf"__{escape(game.name)}__ \(leader {fmt_name(leader)}\){"\n\n"}"
+                       rf"This game has not started yet\. Once everyone has joined, the leader {fmt_name(leader)} can "
+                       rf"reply /shuffle to the poll to start shuffling and allocating Santas\.{"\n\n"}"
+                       rf"Potential participants:{"\n"}"
+                       f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1))) or r"No one has joined yet\!"}")
+
+        await update.message.reply_to_message.reply_markdown_v2(message)
+
 
     @restrict_to_chat_type(
         "Use /new to start a new Secret Santa here.\n\nSend /start to me as a private message for more information.",

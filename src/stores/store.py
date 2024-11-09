@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from models import UserId, PollId
 from models.game import Game
@@ -33,6 +34,11 @@ class Store(ABC):
 
     @abstractmethod
     async def get_pairings(self, user_id: UserId) -> list[tuple[Game, UserId]]:
+        pass
+
+    @abstractmethod
+    async def get_game_pairings(self, poll_id: PollId) -> Optional[Pairings]:
+        """Returns pairings for a game with poll_id. Returns None if no pairings are saved for this game."""
         pass
 
     @abstractmethod
