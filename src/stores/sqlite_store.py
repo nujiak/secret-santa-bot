@@ -67,6 +67,7 @@ class SchemaManager:
                                     wishlist_id TEXT REFERENCES wishlist(poll_id),
                                     user_id INTEGER NOT NULL,
                                     description TEXT NOT NULL,
+                                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                                     PRIMARY KEY (wishlist_id, user_id)
                                   )""")
             connection.execute("""PRAGMA user_version = 2""")
@@ -185,10 +186,11 @@ class SqliteStore(Store):
     @override
     async def update_wishlist(self, poll_id: PollId, user_id: UserId, description: str):
         with self.__connection:
-            self.__connection.execute("""INSERT INTO wishlist_item(wishlist_id, user_id, description)
-                                         VALUES (:poll_id, :user_id, :description)
+            self.__connection.execute("""INSERT INTO wishlist_item(wishlist_id, user_id, description, updated_at)
+                                         VALUES (:poll_id, :user_id, :description, CURRENT_TIMESTAMP)
                                          ON CONFLICT (wishlist_id, user_id) DO 
-                                           UPDATE SET description = excluded.description""",
+                                           UPDATE SET description = excluded.description,
+                                                      updated_at = excluded.updated_at""",
                                       {"poll_id": poll_id, "user_id": user_id, "description": description})
 
     @override
