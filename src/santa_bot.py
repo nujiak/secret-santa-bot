@@ -1,10 +1,11 @@
 import asyncio
 import datetime
+import logging
 from collections.abc import Callable, Awaitable
 from functools import wraps
 from typing import Any, Union, Optional
 
-from telegram import Update, ChatFullInfo, User
+from telegram import Update, ChatFullInfo, User, error
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler, MessageHandler, \
     filters
@@ -36,6 +37,7 @@ class SantaBot:
         self.__store = store
         self.__me: Optional[User] = None
         self.__application = application
+        self.__logger = logging.getLogger(self.__class__.__name__)
         application.add_handlers(self._get_handlers())
 
     @property
@@ -121,12 +123,15 @@ class SantaBot:
             recipient: ChatFullInfo = await self.__get_chat_info(recipient_id)
             if recipient.username:
                 players.append(recipient)
-            await self.__application.bot.send_message(
-                santa_id,
-                (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
-                 rf"for '__{escape(game.name)}__' in *{group.title}*\!"),
-                parse_mode=ParseMode.MARKDOWN_V2
-            )
+            try:
+                await self.__application.bot.send_message(
+                    santa_id,
+                    (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
+                     rf"for '__{escape(game.name)}__' in *{group.title}*\!"),
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+            except error.Forbidden:
+                self.__logger.info("Cannot send message to %s", recipient)
 
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
 
