@@ -62,7 +62,7 @@ class SantaBot:
     async def _handle_new(self, update: Update, _: CallbackContext):
         splits = update.message.text.split(" ", 1)
         if len(splits) == 1:
-            await update.message.reply_markdown_v2("Please provide a name to identify the new Secret Santa game\. "
+            await update.message.reply_markdown_v2(r"Please provide a name to identify the new Secret Santa game\. "
                                                    "For example:\n\n"
                                                    f"/new _Christmas '{str(datetime.date.today().year)[2:]}_")
             return
@@ -82,10 +82,10 @@ class SantaBot:
         sender_id = update.message.from_user.id
         leader = await self.__get_chat_info(sender_id)
 
-        await poll_message.reply_markdown_v2(f"Recruitment for __{escape(new_game_name)}__ has started\! Vote on the poll "
+        await poll_message.reply_markdown_v2(rf"Recruitment for __{escape(new_game_name)}__ has started\! Vote on the poll "
                                              f"above to join as a Secret Santa\\.\n\n"
                                              f"When ready, the leader {fmt_name(leader)} can reply /shuffle to the "
-                                             f"poll to start allocating Santas\\.")
+                                             rf"poll to start allocating Santas\.")
 
         poll_id = poll_message.poll.id
         await self.__store.create_game(new_game_name, group, poll_id, sender_id)
@@ -141,7 +141,7 @@ class SantaBot:
         notify_message = ("I have shuffled the Secret Santas and sent your pairings "
                           rf"[in our private chats]({me_url})\!{"\n\n"}"
                           "Participants:\n"
-                          f"{"\n".join((f"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}\n\n"
+                          f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}\n\n"
                           f"If you would like to reshuffle, the leader {fmt_name(leader)} can reply "
                           rf"/shuffle to the poll again\. Send /status to [me privately]({me_url}) to see your latest "
                           r"allocations\.")
@@ -185,7 +185,7 @@ class SantaBot:
         assert self.__me is not None
         new_members = update.message.new_chat_members
         if self.__me in new_members:
-            await update.message.chat.send_message("Hi\! I am here to help organise Secret Santas in this group\. "
+            await update.message.chat.send_message(r"Hi\! I am here to help organise Secret Santas in this group\. "
                                                    "To get started, send:\n\n" 
                                                    "/new _name of Secret Santa Game_",
                                                    parse_mode=ParseMode.MARKDOWN_V2)
