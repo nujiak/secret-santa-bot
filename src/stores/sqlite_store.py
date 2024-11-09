@@ -8,6 +8,7 @@ from models.game import Game
 from models.group import Group
 from stores.store import Store, Pairings
 
+DEFAULT_SAVE_FILE_PATH = "./secret_santa.sqlite3"
 
 class SchemaManager:
     @staticmethod
@@ -54,9 +55,9 @@ class SchemaManager:
 
 
 class SqliteStore(Store):
-    def __init__(self, db_file_path: Union[str, os.PathLike] = "./secret-santa.sqlite3"):
+    def __init__(self, db_file_path: Union[str, os.PathLike] = DEFAULT_SAVE_FILE_PATH):
         if db_file_path is None:
-            db_file_path = ":memory:"
+            db_file_path = DEFAULT_SAVE_FILE_PATH
         self.__connection = sqlite3.connect(db_file_path, autocommit=False)
         self.__logger = logging.getLogger(self.__class__.__name__)
         SchemaManager.set_up_schema(self.__connection)
