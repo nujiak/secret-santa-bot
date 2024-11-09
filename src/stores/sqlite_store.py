@@ -54,7 +54,7 @@ class SchemaManager:
 
 
 class SqliteStore(Store):
-    def __init__(self, db_file_path: Union[str, os.PathLike] = ":memory:"):
+    def __init__(self, db_file_path: Union[str, os.PathLike] = "./secret-santa.sqlite3"):
         if db_file_path is None:
             db_file_path = ":memory:"
         self.__connection = sqlite3.connect(db_file_path, autocommit=False)
