@@ -33,11 +33,12 @@ def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
 
 
 class SantaBot:
-    def __init__(self, store: Store, application: Application):
+    def __init__(self, store: Store, application: Application, disable_restrictions: bool):
         self.__store = store
         self.__me: Optional[User] = None
         self.__application = application
         self.__logger = logging.getLogger(self.__class__.__name__)
+        self.__disable_restrictions = disable_restrictions
         application.add_handlers(self._get_handlers())
 
     @property
@@ -109,7 +110,7 @@ class SantaBot:
         game = await self.__store.get_game(poll_id)
         users = await self.__store.get_users(poll_id)
 
-        if len(users) < 4:
+        if not self.__disable_restrictions and len(users) < 4:
             await update.message.reply_text("You need at least 4 players to start a Secret Santa")
             return
         pairings = shuffle_pair(users)
@@ -172,6 +173,7 @@ class SantaBot:
                                                         self.__get_chat_info(recipient_id))
                 return rf"__{escape(game.name)}__ \(*{escape(group.title)}*\): {fmt_name(recipient)}"
 
+            [self.__logger.info(pairing) for pairing in pairings]
             messages.extend(await asyncio.gather(*(build_message(game, recipient_id) for game, recipient_id in pairings)))
             message = "\n".join(messages)
         await update.message.reply_markdown_v2(message)
