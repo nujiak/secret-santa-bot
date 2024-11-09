@@ -200,7 +200,7 @@ class SantaBot:
                        rf"This game has been started and Secret Santas have been shuffled\. Send /status to me in "
                        rf"a [private chat](https://t.me/{self.__me.username}) to see your allocations\.{"\n\n"}"
                        rf"Participants:{"\n"}"
-                       f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}\n\n")
+                       f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}")
         else:
             player_ids = await self.__store.get_users(poll_id)
             players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in player_ids))

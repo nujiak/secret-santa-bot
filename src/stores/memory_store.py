@@ -67,6 +67,8 @@ class MemoryStore(Store):
     @override
     async def get_game_pairings(self, poll_id: PollId) -> Optional[Pairings]:
         game = await self.get_game(poll_id)
+        if game not in self.__pairings:
+            return None
         return self.__pairings.get(game)
 
     @override
