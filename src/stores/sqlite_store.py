@@ -2,7 +2,6 @@ import logging
 import os
 import sqlite3
 from typing import Callable, Optional, Union
-from venv import logger
 
 from models import UserId, PollId
 from models.game import Game
@@ -84,7 +83,7 @@ class SqliteStore(Store):
         return Game(name, group_id)
 
     async def get_leader(self, poll_id: PollId) -> UserId:
-        logger.debug("Getting leader for poll_id: %s", poll_id)
+        self.__logger.debug("Getting leader for poll_id: %s", poll_id)
         with self.__connection:
             data = self.__connection.execute("""SELECT leader_id FROM game WHERE poll_id = :poll_id""",
                                              {"poll_id": poll_id}).fetchone()
