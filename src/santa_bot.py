@@ -198,7 +198,7 @@ class SantaBot:
         if pairings is not None:
             players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in pairings.keys()))
             player_list = sorted((fmt_name(player) for player in players))
-            message = (rf"__{escape(game.name)}__ \(leader {fmt_name(leader)}\){"\n\n"}"
+            message = (rf"__{escape(game.name)}__ \(started by {fmt_name(leader)}\){"\n\n"}"
                        rf"This game has been started and Secret Santas have been shuffled\. Send /status to me in "
                        rf"a [private chat](https://t.me/{self.__me.username}) to see your allocations\.{"\n\n"}"
                        rf"Participants:{"\n"}"
