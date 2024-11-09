@@ -211,6 +211,7 @@ class SantaBot:
                        rf"Potential participants:{"\n"}"
                        f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1))) or r"No one has joined yet\!"}")
 
+        logging.debug(message)
         await update.message.reply_to_message.reply_markdown_v2(message)
 
 
