@@ -3,9 +3,9 @@ import datetime
 import logging
 from collections.abc import Callable, Awaitable
 from functools import wraps
-from typing import Any, Union, Optional
+from typing import Any, Union
 
-from telegram import Update, ChatFullInfo, User, error, Message
+from telegram import Update, ChatFullInfo, error, Message
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler, MessageHandler, \
     filters
@@ -35,7 +35,6 @@ def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
 class SantaBot:
     def __init__(self, store: Store, application: Application, disable_restrictions: bool):
         self.__store = store
-        self.__me: Optional[User] = None
         self.__application = application
         self.__logger = logging.getLogger(self.__class__.__name__)
         self.__disable_restrictions = disable_restrictions
@@ -69,16 +68,6 @@ class SantaBot:
             if update.message and update.message.from_user:
                 reference = fmt_name(update.message.from_user)
                 await self.__store.save_user_reference(update.message.chat.id, reference)
-            await callback(self, update, context)
-
-        return wrapper
-
-    @staticmethod
-    def require_me(callback: Callable[[Any, Update, CallbackContext], Awaitable[None]]):
-        @wraps(callback)
-        async def wrapper(self: 'SantaBot', update: Update, context: CallbackContext):
-            if self.__me is None:
-                self.__me = await self.__application.bot.get_me()
             await callback(self, update, context)
 
         return wrapper
@@ -118,14 +107,12 @@ class SantaBot:
         await self.__store.create_game(new_game_name, group, poll_id, sender_id)
 
     @save_user
-    @require_me
     @restrict_to_chat_type("Use this command in a group to shuffle a Secret Santa game",
                            {ChatType.GROUP, ChatType.SUPERGROUP})
-    async def _handle_shuffle(self, update: Update, _: CallbackContext):
-        assert self.__me is not None
+    async def _handle_shuffle(self, update: Update, context: CallbackContext):
         if (not update.message.reply_to_message
                 or not update.message.reply_to_message.poll
-                or update.message.reply_to_message.from_user != self.__me):
+                or update.message.reply_to_message.from_user != context.bot.bot):
             await update.message.reply_text("Reply /shuffle to a Secret Santa poll to shuffle the participants")
             return
         poll_id = update.message.reply_to_message.poll.id
@@ -163,7 +150,7 @@ class SantaBot:
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
 
         player_list = sorted(players)
-        me_url = f"https://t.me/{self.__me.username}"
+        me_url = f"https://t.me/{context.bot.bot.username}"
 
         notify_message = ("I have shuffled the Secret Santas and sent your pairings "
                           rf"[in our private chats]({me_url})\!{"\n\n"}"
@@ -206,14 +193,13 @@ class SantaBot:
         await update.message.reply_markdown_v2(message)
 
     @save_user
-    @require_me
-    async def __handle_status_in_group(self, update: Update, _: CallbackContext):
+    async def __handle_status_in_group(self, update: Update, context: CallbackContext):
         if (not update.message.reply_to_message
                 or not update.message.reply_to_message.poll
-                or update.message.reply_to_message.from_user != self.__me):
+                or update.message.reply_to_message.from_user != context.bot.bot):
             await update.message.reply_markdown_v2("Reply /status to a Secret Santa poll to see the game's status, "
                                                    "or send /status to me in a "
-                                                   f"[private chat](https://t.me/{self.__me.username}) to see all your "
+                                                   f"[private chat](https://t.me/{context.bot.bot.username}) to see all your "
                                                    r"active Secret Santa participation\.")
             return
         poll = update.message.reply_to_message.poll
@@ -228,7 +214,7 @@ class SantaBot:
             player_list = sorted(players)
             message = (rf"__{escape(game.name)}__ \(leader {leader_reference}\){"\n\n"}"
                        rf"This game has been started and Secret Santas have been shuffled\. Send /status to me in "
-                       rf"a [private chat](https://t.me/{self.__me.username}) to see your allocations\.{"\n\n"}"
+                       rf"a [private chat](https://t.me/{context.bot.bot.username}) to see your allocations\.{"\n\n"}"
                        rf"Participants:{"\n"}"
                        f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}")
         else:
@@ -245,10 +231,9 @@ class SantaBot:
         await update.message.reply_to_message.reply_markdown_v2(message)
 
     @save_user
-    @require_me
-    async def _handle_wishlist_reply(self, update: Update, _: CallbackContext):
+    async def _handle_wishlist_reply(self, update: Update, context: CallbackContext):
         """Handles user reply to a wishlist message"""
-        if not update.message.reply_to_message or update.message.reply_to_message.from_user != self.__me:
+        if not update.message.reply_to_message or update.message.reply_to_message.from_user != context.bot.bot:
             return
 
         wishlist_id = await self.__store.get_wishlist_id(update.message.reply_to_message.id)
@@ -269,12 +254,11 @@ class SantaBot:
         await update.message.reply_to_message.edit_text(wishlist_message, parse_mode=ParseMode.MARKDOWN_V2)
 
     @save_user
-    @require_me
     @restrict_to_chat_type(
         "Use /wishlist in a group to start or add on to a wishlist",
         {ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL}
     )
-    async def _handle_wishlist_command(self, update: Update, _: CallbackContext):
+    async def _handle_wishlist_command(self, update: Update, context: CallbackContext):
         """Handles when a user sends a /wishlist command"""
 
         async def resend_wishlist(wishlist_id: PollId):
@@ -306,7 +290,7 @@ class SantaBot:
         if not update.message.reply_to_message:
             return await update.message.reply_text(negative_response)
 
-        if update.message.reply_to_message.poll and update.message.reply_to_message.from_user == self.__me:
+        if update.message.reply_to_message.poll and update.message.reply_to_message.from_user == context.bot.bot:
             poll_id = update.message.reply_to_message.poll.id
             return await resend_wishlist(poll_id)
 
@@ -350,11 +334,9 @@ class SantaBot:
             "Welcome to the Secret Santa Bot! I can help you to organise a Secret Santa in a group, just add me to the group and send /new")
         await self._handle_status(update, callback_context)
 
-    @require_me
-    async def _handle_new_members(self, update: Update, _: CallbackContext):
-        assert self.__me is not None
+    async def _handle_new_members(self, update: Update, context: CallbackContext):
         new_members = update.message.new_chat_members
-        if self.__me in new_members:
+        if context.bot.bot in new_members:
             await update.message.chat.send_message(r"Hi\! I am here to help organise Secret Santas in this group\. "
                                                    "To get started, send:\n\n" 
                                                    "/new _name of Secret Santa Game_",
