@@ -162,7 +162,7 @@ class SantaBot:
 
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
 
-        player_list = sorted((fmt_name(player) for player in players))
+        player_list = sorted(players)
         me_url = f"https://t.me/{self.__me.username}"
 
         notify_message = ("I have shuffled the Secret Santas and sent your pairings "
