@@ -1,7 +1,8 @@
 import random
 import re
+from typing import Union
 
-from telegram import ChatFullInfo
+from telegram import ChatFullInfo, User
 from telegram.constants import ChatType
 
 
@@ -19,8 +20,8 @@ def shuffle_pair[T](items: list[T]) -> dict[T, T]:
     return {items[i]: items[(i + 1) % len(items)] for i in range(len(items))}
 
 
-def fmt_name(chat_info: ChatFullInfo) -> str:
-    assert chat_info.type == ChatType.PRIVATE
+def fmt_name(chat_info: Union[ChatFullInfo, User]) -> str:
+    assert isinstance(chat_info, User) or chat_info.type == ChatType.PRIVATE
     if chat_info.username:
         return f"@{escape(chat_info.username)}"
 

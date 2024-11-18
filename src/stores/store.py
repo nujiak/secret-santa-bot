@@ -74,3 +74,17 @@ class Store(WishlistMixin, ABC):
     @abstractmethod
     async def remove_user_from_game(self, user_id: UserId, poll_id: PollId):
         pass
+
+    @abstractmethod
+    async def get_user_reference(self, user_id: UserId) -> Optional[str]:
+        """
+        Get user reference for tagging a user, formatted in Markdown V2. Returns None if not found.
+        """
+        pass
+
+    @abstractmethod
+    async def save_user_reference(self, user_id: UserId, reference: str):
+        """
+        Save user reference for tagging a user, formatted in Markdown V2.
+        """
+        pass

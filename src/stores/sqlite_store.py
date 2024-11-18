@@ -21,6 +21,7 @@ class SchemaManager:
         upgrade_functions: list[Callable[[sqlite3.Connection], None]] = [
             SchemaManager.__upgrade_schema_1,
             SchemaManager.__upgrade_schema_2,
+            SchemaManager.__upgrade_schema_3,
         ]
 
         for upgrade_fn in upgrade_functions[current_version:]:
@@ -71,6 +72,16 @@ class SchemaManager:
                                     PRIMARY KEY (wishlist_id, user_id)
                                   )""")
             connection.execute("""PRAGMA user_version = 2""")
+
+    @staticmethod
+    def __upgrade_schema_3(connection: sqlite3.Connection):
+        with connection:
+            connection.execute("""CREATE TABLE user(
+                                    user_id INTEGER PRIMARY KEY,
+                                    reference TEXT NOT NULL,
+                                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                  )""")
+            connection.execute("""PRAGMA user_version = 3""")
 
 
 class SqliteStore(Store):
@@ -213,9 +224,27 @@ class SqliteStore(Store):
     @override
     async def get_wishlist_message_id(self, poll_id: PollId) -> Optional[MessageId]:
         with self.__connection:
-            with self.__connection:
-                data = self.__connection.execute("SELECT message_id FROM wishlist WHERE poll_id = :poll_id",
-                                                 {"poll_id": poll_id}).fetchone()
+            data = self.__connection.execute("SELECT message_id FROM wishlist WHERE poll_id = :poll_id",
+                                             {"poll_id": poll_id}).fetchone()
         if data is None:
             return None
         return data[0]
+
+    @override
+    async def get_user_reference(self, user_id: UserId) -> Optional[str]:
+        with self.__connection:
+            data = self.__connection.execute("""SELECT reference FROM user WHERE user_id = :user_id""",
+                                             {"user_id": user_id}).fetchone()
+        if data is None:
+            return None
+        return data[0]
+
+    @override
+    async def save_user_reference(self, user_id: UserId, reference: str):
+        with self.__connection:
+            self.__connection.execute("""INSERT INTO user
+                                         VALUES (:user_id, :reference, CURRENT_TIMESTAMP)
+                                         ON CONFLICT (user_id) DO
+                                           UPDATE SET reference = excluded.reference,
+                                                      updated_at = excluded.updated_at""",
+                                      {"user_id": user_id, "reference": reference})

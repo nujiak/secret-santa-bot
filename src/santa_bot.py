@@ -48,6 +48,31 @@ class SantaBot:
     async def __get_chat_info(self, chat_id: Union[UserId, GroupId]) -> ChatFullInfo:
         return await self.__application.bot.get_chat(chat_id)
 
+    async def __get_user_reference(self, user_id: UserId) -> str:
+        """Returns reference for tagging a user, formatted in Markdown V2"""
+        try:
+            user = await self.__get_chat_info(user_id)
+            self.__logger.debug("Fetched user id %s from server, saving to store")
+            reference = fmt_name(user)
+            await self.__store.save_user_reference(user_id, reference)
+        except error.BadRequest:
+            self.__logger.debug("Unable to fetch user id %s from server, getting from store instead",
+                                user_id)
+            reference = self.__store.get_user_reference(user_id)
+        return reference
+
+    @staticmethod
+    def save_user(callback: Callable[[Any, Update, CallbackContext], Awaitable[None]]):
+        """Saves the username for the sender of the message in update"""
+        @wraps(callback)
+        async def wrapper(self: 'SantaBot', update: Update, context: CallbackContext):
+            if update.message and update.message.from_user:
+                reference = fmt_name(update.message.from_user)
+                await self.__store.save_user_reference(update.message.chat.id, reference)
+            await callback(self, update, context)
+
+        return wrapper
+
     @staticmethod
     def require_me(callback: Callable[[Any, Update, CallbackContext], Awaitable[None]]):
         @wraps(callback)
@@ -58,6 +83,7 @@ class SantaBot:
 
         return wrapper
 
+    @save_user
     @restrict_to_chat_type("Use this command in a group to start new Secret Santa game",
                            {ChatType.GROUP, ChatType.SUPERGROUP})
     async def _handle_new(self, update: Update, _: CallbackContext):
@@ -81,16 +107,17 @@ class SantaBot:
             is_anonymous=False,
         )
         sender_id = update.message.from_user.id
-        leader = await self.__get_chat_info(sender_id)
+        leader_reference = await self.__get_user_reference(sender_id)
 
         await poll_message.reply_markdown_v2(rf"Recruitment for __{escape(new_game_name)}__ has started\! Vote on the poll "
                                              f"above to join as a Secret Santa\\.\n\n"
-                                             f"When ready, the leader {fmt_name(leader)} can reply /shuffle to the "
+                                             f"When ready, the leader {leader_reference} can reply /shuffle to the "
                                              rf"poll to start allocating Santas\.")
 
         poll_id = poll_message.poll.id
         await self.__store.create_game(new_game_name, group, poll_id, sender_id)
 
+    @save_user
     @require_me
     @restrict_to_chat_type("Use this command in a group to shuffle a Secret Santa game",
                            {ChatType.GROUP, ChatType.SUPERGROUP})
@@ -103,9 +130,9 @@ class SantaBot:
             return
         poll_id = update.message.reply_to_message.poll.id
         leader_id = await self.__store.get_leader(poll_id)
-        leader = await self.__get_chat_info(leader_id)
+        leader_reference = await self.__get_user_reference(leader_id)
         if leader_id != update.message.from_user.id:
-            await update.message.reply_markdown_v2(f"Only the leader for this poll {fmt_name(leader)} can start shuffling")
+            await update.message.reply_markdown_v2(f"Only the leader for this poll {leader_reference} can start shuffling")
             return
         game = await self.__store.get_game(poll_id)
         users = await self.__store.get_users(poll_id)
@@ -121,18 +148,17 @@ class SantaBot:
         # collect usernames while updating users
         players = []
         async def update_user(santa_id, recipient_id):
-            recipient: ChatFullInfo = await self.__get_chat_info(recipient_id)
-            if recipient.username:
-                players.append(recipient)
+            recipient_reference = await self.__get_user_reference(recipient_id)
+            players.append(recipient_reference)
             try:
                 await self.__application.bot.send_message(
                     santa_id,
-                    (f"You have been assigned as the Secret Santa for {fmt_name(recipient)} "
+                    (f"You have been assigned as the Secret Santa for {recipient_reference} "
                      rf"for '__{escape(game.name)}__' in *{group.title}*\!"),
                     parse_mode=ParseMode.MARKDOWN_V2
                 )
             except error.Forbidden:
-                self.__logger.info("Cannot send message to %s", recipient)
+                self.__logger.info("Cannot send message to %s", recipient_reference)
 
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
 
@@ -143,11 +169,12 @@ class SantaBot:
                           rf"[in our private chats]({me_url})\!{"\n\n"}"
                           "Participants:\n"
                           f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}\n\n"
-                          f"If you would like to reshuffle, the leader {fmt_name(leader)} can reply "
+                          f"If you would like to reshuffle, the leader {leader_reference} can reply "
                           rf"/shuffle to the poll again\. Send /status to [me privately]({me_url}) to see your latest "
                           r"allocations\.")
         await update.message.reply_markdown_v2(notify_message)
 
+    @save_user
     async def _handle_poll_answer(self, update: Update, _: CallbackContext):
         if 0 in update.poll_answer.option_ids:
             await self.__store.add_user_to_game(update.poll_answer.user.id, update.poll_answer.poll_id)
@@ -169,15 +196,16 @@ class SantaBot:
             messages = ["These are whom you are the Secret Santa for:\n"]
 
             async def build_message(game: Game, recipient_id: UserId):
-                group, recipient = await asyncio.gather(self.__get_chat_info(game.group_id),
-                                                        self.__get_chat_info(recipient_id))
-                return rf"__{escape(game.name)}__ \(*{escape(group.title)}*\): {fmt_name(recipient)}"
+                group, recipient_reference = await asyncio.gather(self.__get_chat_info(game.group_id),
+                                                                  self.__get_user_reference(recipient_id))
+                return rf"__{escape(game.name)}__ \(*{escape(group.title)}*\): {recipient_reference}"
 
             [self.__logger.info(pairing) for pairing in pairings]
             messages.extend(await asyncio.gather(*(build_message(game, recipient_id) for game, recipient_id in pairings)))
             message = "\n".join(messages)
         await update.message.reply_markdown_v2(message)
 
+    @save_user
     @require_me
     async def __handle_status_in_group(self, update: Update, _: CallbackContext):
         if (not update.message.reply_to_message
@@ -193,22 +221,22 @@ class SantaBot:
         game, pairings, leader_id = await asyncio.gather(self.__store.get_game(poll_id),
                                                          self.__store.get_game_pairings(poll_id),
                                                          self.__store.get_leader(poll_id))
-        leader = await self.__get_chat_info(leader_id)
+        leader_reference = await self.__get_user_reference(leader_id)
 
         if pairings is not None:
-            players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in pairings.keys()))
-            player_list = sorted((fmt_name(player) for player in players))
-            message = (rf"__{escape(game.name)}__ \(leader {fmt_name(leader)}\){"\n\n"}"
+            players = await asyncio.gather(*(self.__get_user_reference(user_id) for user_id in pairings.keys()))
+            player_list = sorted(players)
+            message = (rf"__{escape(game.name)}__ \(leader {leader_reference}\){"\n\n"}"
                        rf"This game has been started and Secret Santas have been shuffled\. Send /status to me in "
                        rf"a [private chat](https://t.me/{self.__me.username}) to see your allocations\.{"\n\n"}"
                        rf"Participants:{"\n"}"
                        f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}")
         else:
             player_ids = await self.__store.get_users(poll_id)
-            players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in player_ids))
-            player_list = sorted((fmt_name(player) for player in players))
-            message = (rf"__{escape(game.name)}__ \(leader {fmt_name(leader)}\){"\n\n"}"
-                       rf"This game has not started yet\. Once everyone has joined, the leader {fmt_name(leader)} can "
+            players = await asyncio.gather(*(self.__get_user_reference(user_id) for user_id in player_ids))
+            player_list = sorted(players)
+            message = (rf"__{escape(game.name)}__ \(leader {leader_reference}\){"\n\n"}"
+                       rf"This game has not started yet\. Once everyone has joined, the leader {leader_reference} can "
                        rf"reply /shuffle to the poll to start shuffling and allocating Santas\.{"\n\n"}"
                        rf"Potential participants:{"\n"}"
                        f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1))) or r"No one has joined yet\!"}")
@@ -216,6 +244,7 @@ class SantaBot:
         logging.debug(message)
         await update.message.reply_to_message.reply_markdown_v2(message)
 
+    @save_user
     @require_me
     async def _handle_wishlist_reply(self, update: Update, _: CallbackContext):
         """Handles user reply to a wishlist message"""
@@ -239,6 +268,7 @@ class SantaBot:
         wishlist_message = await self.__construct_wishlist(game, wishlist)
         await update.message.reply_to_message.edit_text(wishlist_message, parse_mode=ParseMode.MARKDOWN_V2)
 
+    @save_user
     @require_me
     @restrict_to_chat_type(
         "Use /wishlist in a group to start or add on to a wishlist",
@@ -296,8 +326,8 @@ class SantaBot:
         return True
 
     async def __construct_wishlist(self, game: Game, wishlist: dict[UserId, str]):
-        players = await asyncio.gather(*(self.__get_chat_info(user_id) for user_id in wishlist.keys()))
-        players = sorted({fmt_name(player): player.id for player in players}.items())
+        players = await asyncio.gather(*(self.__get_user_reference(user_id) for user_id in wishlist.keys()))
+        players = sorted({player: player_id for player_id, player in zip(wishlist.keys(), players)}.items())
 
         if players:
             wishlist_item_segment = f"{"\n".join(f"{name}: _{escape(wishlist[player_id])}_" for name, player_id in players)}"
@@ -311,6 +341,7 @@ class SantaBot:
 
         )
 
+    @save_user
     @restrict_to_chat_type(
         "Use /new to start a new Secret Santa here.\n\nSend /start to me as a private message for more information.",
         {ChatType.PRIVATE})
