@@ -3,6 +3,7 @@ import datetime
 import logging
 from collections.abc import Callable, Awaitable
 from functools import wraps
+from lib2to3.fixes.fix_input import context
 from typing import Any, Union
 
 from telegram import Update, ChatFullInfo, error, Message
@@ -21,11 +22,11 @@ from utils import shuffle_pair, fmt_name, escape
 def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
     def decorator(callback: Callable[[Any, Update, CallbackContext], Awaitable[None]]):
         @wraps(callback)
-        async def wrapper(self: Any, update: Update, context: CallbackContext):
+        async def wrapper(self: Any, update: Update, callback_context: CallbackContext):
             if update.message.chat.type not in chat_types:
                 await update.message.reply_text(message)
                 return
-            await callback(self, update, context)
+            await callback(self, update, callback_context)
 
         return wrapper
 
@@ -44,13 +45,14 @@ class SantaBot:
     def application(self) -> Application:
         return self.__application
 
-    async def __get_chat_info(self, chat_id: Union[UserId, GroupId]) -> ChatFullInfo:
-        return await self.__application.bot.get_chat(chat_id)
+    @staticmethod
+    async def __get_chat_info(chat_id: Union[UserId, GroupId], callback_context: CallbackContext) -> ChatFullInfo:
+        return await callback_context.bot.get_chat(chat_id)
 
-    async def __get_user_reference(self, user_id: UserId) -> str:
+    async def __get_user_reference(self, user_id: UserId, callback_context: CallbackContext) -> str:
         """Returns reference for tagging a user, formatted in Markdown V2"""
         try:
-            user = await self.__get_chat_info(user_id)
+            user = await self.__get_chat_info(user_id, callback_context)
             self.__logger.debug("Fetched user id %s from server, saving to store")
             reference = fmt_name(user)
             await self.__store.save_user_reference(user_id, reference)
@@ -64,18 +66,18 @@ class SantaBot:
     def save_user(callback: Callable[[Any, Update, CallbackContext], Awaitable[None]]):
         """Saves the username for the sender of the message in update"""
         @wraps(callback)
-        async def wrapper(self: 'SantaBot', update: Update, context: CallbackContext):
+        async def wrapper(self: 'SantaBot', update: Update, callback_context: CallbackContext):
             if update.message and update.message.from_user:
                 reference = fmt_name(update.message.from_user)
                 await self.__store.save_user_reference(update.message.chat.id, reference)
-            await callback(self, update, context)
+            await callback(self, update, callback_context)
 
         return wrapper
 
     @save_user
     @restrict_to_chat_type("Use this command in a group to start new Secret Santa game",
                            {ChatType.GROUP, ChatType.SUPERGROUP})
-    async def _handle_new(self, update: Update, _: CallbackContext):
+    async def _handle_new(self, update: Update, context: CallbackContext):
         splits = update.message.text.split(" ", 1)
         if len(splits) == 1:
             await update.message.reply_markdown_v2(r"Please provide a name to identify the new Secret Santa game\. "
@@ -96,7 +98,7 @@ class SantaBot:
             is_anonymous=False,
         )
         sender_id = update.message.from_user.id
-        leader_reference = await self.__get_user_reference(sender_id)
+        leader_reference = await self.__get_user_reference(sender_id, context)
 
         await poll_message.reply_markdown_v2(rf"Recruitment for __{escape(new_game_name)}__ has started\! Vote on the poll "
                                              f"above to join as a Secret Santa\\.\n\n"
@@ -109,15 +111,15 @@ class SantaBot:
     @save_user
     @restrict_to_chat_type("Use this command in a group to shuffle a Secret Santa game",
                            {ChatType.GROUP, ChatType.SUPERGROUP})
-    async def _handle_shuffle(self, update: Update, context: CallbackContext):
+    async def _handle_shuffle(self, update: Update, callback_context: CallbackContext):
         if (not update.message.reply_to_message
                 or not update.message.reply_to_message.poll
-                or update.message.reply_to_message.from_user != context.bot.bot):
+                or update.message.reply_to_message.from_user != callback_context.bot.bot):
             await update.message.reply_text("Reply /shuffle to a Secret Santa poll to shuffle the participants")
             return
         poll_id = update.message.reply_to_message.poll.id
         leader_id = await self.__store.get_leader(poll_id)
-        leader_reference = await self.__get_user_reference(leader_id)
+        leader_reference = await self.__get_user_reference(leader_id, callback_context)
         if leader_id != update.message.from_user.id:
             await update.message.reply_markdown_v2(f"Only the leader for this poll {leader_reference} can start shuffling")
             return
@@ -130,15 +132,15 @@ class SantaBot:
         pairings = shuffle_pair(users)
         await self.__store.save_pairings(poll_id, pairings)
 
-        group: ChatFullInfo = await self.__get_chat_info(game.group_id)
+        group: ChatFullInfo = await self.__get_chat_info(game.group_id, callback_context)
 
         # collect usernames while updating users
         players = []
         async def update_user(santa_id, recipient_id):
-            recipient_reference = await self.__get_user_reference(recipient_id)
+            recipient_reference = await self.__get_user_reference(recipient_id, callback_context)
             players.append(recipient_reference)
             try:
-                await self.__application.bot.send_message(
+                await callback_context.bot.send_message(
                     santa_id,
                     (f"You have been assigned as the Secret Santa for {recipient_reference} "
                      rf"for '__{escape(game.name)}__' in *{group.title}*\!"),
@@ -150,7 +152,7 @@ class SantaBot:
         await asyncio.gather(*[update_user(santa_id, recipient_id) for santa_id, recipient_id in pairings.items()])
 
         player_list = sorted(players)
-        me_url = f"https://t.me/{context.bot.bot.username}"
+        me_url = f"https://t.me/{callback_context.bot.bot.username}"
 
         notify_message = ("I have shuffled the Secret Santas and sent your pairings "
                           rf"[in our private chats]({me_url})\!{"\n\n"}"
@@ -174,7 +176,7 @@ class SantaBot:
         else:
             return await self.__handle_status_in_group(update, callback_context)
 
-    async def __handle_status_in_private(self, update: Update, _: CallbackContext):
+    async def __handle_status_in_private(self, update: Update, callback_context: CallbackContext):
         user_id = update.message.from_user.id
         pairings = await self.__store.get_pairings(user_id)
         if not pairings:
@@ -183,8 +185,8 @@ class SantaBot:
             messages = ["These are whom you are the Secret Santa for:\n"]
 
             async def build_message(game: Game, recipient_id: UserId):
-                group, recipient_reference = await asyncio.gather(self.__get_chat_info(game.group_id),
-                                                                  self.__get_user_reference(recipient_id))
+                group, recipient_reference = await asyncio.gather(self.__get_chat_info(game.group_id, callback_context),
+                                                                  self.__get_user_reference(recipient_id, callback_context))
                 return rf"__{escape(game.name)}__ \(*{escape(group.title)}*\): {recipient_reference}"
 
             [self.__logger.info(pairing) for pairing in pairings]
@@ -193,13 +195,13 @@ class SantaBot:
         await update.message.reply_markdown_v2(message)
 
     @save_user
-    async def __handle_status_in_group(self, update: Update, context: CallbackContext):
+    async def __handle_status_in_group(self, update: Update, callback_context: CallbackContext):
         if (not update.message.reply_to_message
                 or not update.message.reply_to_message.poll
-                or update.message.reply_to_message.from_user != context.bot.bot):
+                or update.message.reply_to_message.from_user != callback_context.bot.bot):
             await update.message.reply_markdown_v2("Reply /status to a Secret Santa poll to see the game's status, "
                                                    "or send /status to me in a "
-                                                   f"[private chat](https://t.me/{context.bot.bot.username}) to see all your "
+                                                   f"[private chat](https://t.me/{callback_context.bot.bot.username}) to see all your "
                                                    r"active Secret Santa participation\.")
             return
         poll = update.message.reply_to_message.poll
@@ -207,19 +209,19 @@ class SantaBot:
         game, pairings, leader_id = await asyncio.gather(self.__store.get_game(poll_id),
                                                          self.__store.get_game_pairings(poll_id),
                                                          self.__store.get_leader(poll_id))
-        leader_reference = await self.__get_user_reference(leader_id)
+        leader_reference = await self.__get_user_reference(leader_id, callback_context)
 
         if pairings is not None:
-            players = await asyncio.gather(*(self.__get_user_reference(user_id) for user_id in pairings.keys()))
+            players = await asyncio.gather(*(self.__get_user_reference(user_id, callback_context) for user_id in pairings.keys()))
             player_list = sorted(players)
             message = (rf"__{escape(game.name)}__ \(leader {leader_reference}\){"\n\n"}"
                        rf"This game has been started and Secret Santas have been shuffled\. Send /status to me in "
-                       rf"a [private chat](https://t.me/{context.bot.bot.username}) to see your allocations\.{"\n\n"}"
+                       rf"a [private chat](https://t.me/{callback_context.bot.bot.username}) to see your allocations\.{"\n\n"}"
                        rf"Participants:{"\n"}"
                        f"{"\n".join((rf"{i}\. {player_name}" for i, player_name in enumerate(player_list, 1)))}")
         else:
             player_ids = await self.__store.get_users(poll_id)
-            players = await asyncio.gather(*(self.__get_user_reference(user_id) for user_id in player_ids))
+            players = await asyncio.gather(*(self.__get_user_reference(user_id, callback_context) for user_id in player_ids))
             player_list = sorted(players)
             message = (rf"__{escape(game.name)}__ \(leader {leader_reference}\){"\n\n"}"
                        rf"This game has not started yet\. Once everyone has joined, the leader {leader_reference} can "
@@ -281,7 +283,7 @@ class SantaBot:
             old_message_id = await self.__store.get_wishlist_message_id(wishlist_id)
             await self.__store.create_wishlist(wishlist_id, new_message.id)
             try:
-                await self.__application.bot.delete_message(chat_id=game.group_id, message_id=old_message_id)
+                await context.bot.delete_message(chat_id=game.group_id, message_id=old_message_id)
             except:
                 pass
 
@@ -310,7 +312,7 @@ class SantaBot:
         return True
 
     async def __construct_wishlist(self, game: Game, wishlist: dict[UserId, str]):
-        players = await asyncio.gather(*(self.__get_user_reference(user_id) for user_id in wishlist.keys()))
+        players = await asyncio.gather(*(self.__get_user_reference(user_id, context) for user_id in wishlist.keys()))
         players = sorted({player: player_id for player_id, player in zip(wishlist.keys(), players)}.items())
 
         if players:
