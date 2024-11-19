@@ -1,14 +1,16 @@
 import asyncio
 import datetime
 import logging
+import pprint
+import traceback
 from collections.abc import Callable, Awaitable
 from functools import wraps
-from typing import Any, Union
+from typing import Any, Union, Optional
 
 from telegram import Update, ChatFullInfo, error, Message
 from telegram.constants import ChatType, ParseMode, ReactionEmoji
 from telegram.ext import CallbackContext, BaseHandler, CommandHandler, Application, PollAnswerHandler, MessageHandler, \
-    filters
+    filters, ContextTypes
 
 from literals import JOIN_STRING
 from models import UserId, GroupId, PollId
@@ -33,12 +35,14 @@ def restrict_to_chat_type(message: str, chat_types: set[ChatType]):
 
 
 class SantaBot:
-    def __init__(self, store: Store, application: Application, disable_restrictions: bool):
+    def __init__(self, store: Store, application: Application, disable_restrictions: bool, dev_id: Optional[int]):
         self.__store = store
         self.__application = application
         self.__logger = logging.getLogger(self.__class__.__name__)
         self.__disable_restrictions = disable_restrictions
+        self.__dev_id = dev_id
         application.add_handlers(self._get_handlers())
+        application.add_error_handler(self._handle_error)
 
     @property
     def application(self) -> Application:
@@ -344,6 +348,34 @@ class SantaBot:
                                                    "To get started, send:\n\n" 
                                                    "/new _name of Secret Santa Game_",
                                                    parse_mode=ParseMode.MARKDOWN_V2)
+
+    async def _handle_error(self, update: object, callback_context: ContextTypes.DEFAULT_TYPE):
+        self.__logger.error("Exception while handling update:", exc_info=callback_context.error)
+
+        if self.__dev_id is None:
+            return
+
+        tb = "".join(traceback.format_exception(None, callback_context.error, callback_context.error.__traceback__))
+        update_str = update.to_dict() if isinstance(update, Update) else str(update)
+
+        report_message = (
+            "An exception was raised while handling update:\n"
+            "```\n"
+            f"{escape(pprint.pformat(update_str))}\n"
+            "```\n"
+            "Exception:\n"
+            "```\n"
+            f"{escape(tb)}"
+            f"```\n"
+        )
+        await callback_context.bot.send_message(self.__dev_id, report_message, parse_mode=ParseMode.MARKDOWN_V2)
+
+        if isinstance(update, Update):
+            if update.message:
+                await update.message.reply_text("Oh no! An error occurred while handling your message. Don't worry, "
+                                                "a bug report has been submitted and will be attended to in a "
+                                                "few days' time.")
+
 
     def _get_handlers(self) -> list[BaseHandler]:
         return [
