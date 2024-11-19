@@ -56,13 +56,13 @@ class SantaBot:
         """Returns reference for tagging a user, formatted in Markdown V2"""
         try:
             user = await self.__get_chat_info(user_id, callback_context)
-            self.__logger.debug("Fetched user id %s from server, saving to store")
+            self.__logger.debug("Fetched user id %s from server, saving to store", user)
             reference = fmt_name(user)
             await self.__store.save_user_reference(user_id, reference)
         except error.BadRequest:
             self.__logger.debug("Unable to fetch user id %s from server, getting from store instead",
                                 user_id)
-            reference = self.__store.get_user_reference(user_id)
+            reference = await self.__store.get_user_reference(user_id)
         return reference
 
     @staticmethod
